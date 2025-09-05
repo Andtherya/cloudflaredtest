@@ -1,26 +1,41 @@
-name: Release cloudflared
+name: Build & Release Cloudflared
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version'
-        required: true
+        description: 'Version number for release (optional, auto-generated if empty)'
+        required: false
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     env:
       ARGO_PORT: 8080
+      # ARGO_AUTH 可以在 GitHub Secrets 里配置
       ARGO_AUTH: ${{ secrets.ARGO_AUTH }}
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.21'
+
+      - name: Determine Release Tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            TAG="v${GITHUB_RUN_NUMBER}"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag $TAG
+            git push origin $TAG
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build Linux AMD64
         run: |
@@ -30,16 +45,17 @@ jobs:
         run: |
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o cloudflared-linux-arm64 ./cmd/cloudflared
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version }}
+          tag_name: ${{ steps.tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifacts
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
           files: |
             cloudflared-linux-amd64
             cloudflared-linux-arm64

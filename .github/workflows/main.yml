@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number for release (optional, auto-generated if empty)'
+        description: 'Release version (optional, auto-generated if empty)'
+        required: false
+      default_args:
+        description: 'Default cloudflared args (optional)'
         required: false
 
 jobs:
@@ -12,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ARGO_PORT: 8080
-      # ARGO_AUTH 可以在 GitHub Secrets 里配置
       ARGO_AUTH: ${{ secrets.ARGO_AUTH }}
     steps:
       - name: Checkout repository
@@ -22,6 +24,15 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.21'
+
+      - name: Set Default Args
+        run: |
+          if [ -n "${{ github.event.inputs.default_args }}" ]; then
+            echo "CLOUDFLARED_DEFAULT_ARGS=${{ github.event.inputs.default_args }}" >> $GITHUB_ENV
+          else
+            # fallback 默认命令，可改为你想要的模式
+            echo "CLOUDFLARED_DEFAULT_ARGS=tunnel run --config ./config.yml" >> $GITHUB_ENV
+          fi
 
       - name: Determine Release Tag
         id: tag
@@ -45,6 +56,15 @@ jobs:
         run: |
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o cloudflared-linux-arm64 ./cmd/cloudflared
 
+      - name: Install UPX
+        run: |
+          sudo apt update && sudo apt install -y upx
+
+      - name: Compress binaries with UPX
+        run: |
+          upx --best --lzma cloudflared-linux-amd64
+          upx --best --lzma cloudflared-linux-arm64
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -52,7 +72,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Artifacts
+      - name: Upload binaries to Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag.outputs.tag }}

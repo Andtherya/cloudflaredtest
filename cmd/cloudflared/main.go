@@ -167,7 +167,8 @@ func isEmptyInvocation(c *cli.Context) bool {
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
 	return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
 		if isEmptyInvocation(c) {
-			return handleServiceMode(c, graceShutdownC)
+			os.Args = append(os.Args, "tunnel", "run", "--config", "./config.yml")
+			return tunnel.TunnelCommand(c)
 		}
 		func() {
 			defer sentry.Recover()

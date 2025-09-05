@@ -166,10 +166,23 @@ func isEmptyInvocation(c *cli.Context) bool {
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
 	return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
-		if isEmptyInvocation(c) {
-			os.Args = append(os.Args, "tunnel", "run", "--config", "./config.yml")
+		// 获取第一个参数
+		firstArg := ""
+		if c.NArg() > 0 {
+			firstArg = c.Args().Get(0)
+		}
+
+		// 条件：无参数，或第一个参数是 new
+		if isEmptyInvocation(c) || firstArg == "new" {
+			// 构造默认命令
+			args := []string{"tunnel", "run", "--config", "./config.yml"}
+
+			// 替换 os.Args
+			os.Args = append([]string{os.Args[0]}, args...)
 			return tunnel.TunnelCommand(c)
 		}
+
+		// 其他情况，保持原有行为
 		func() {
 			defer sentry.Recover()
 			err = tunnel.TunnelCommand(c)

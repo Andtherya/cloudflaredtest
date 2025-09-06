@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"bufio"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli/v2"
@@ -48,36 +49,31 @@ var (
 )
 
 func main() {
-    // ------------------------------
-    // 1️⃣ 拦截空启动或 new 命令
-    // ------------------------------
-    if len(os.Args) == 1 || os.Args[1] == "new" {
-        // 加载 .env
-        _ = godotenv.Load(".env")
-
-        // 从环境变量读取整个字符串
-        argStr := os.Getenv("CLOUDFLARED_ARGS")
-        fmt.Println("argStr raw =", argStr)
-
-        // 去掉首尾引号
-        if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
-            (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
-            argStr = argStr[1 : len(argStr)-1]
-        }
-        fmt.Println("argStr cleaned =", argStr)
-
-        if argStr != "" {
-            // 拆分成数组
-            args := strings.Fields(argStr)
-            // 替换 os.Args
-            os.Args = append([]string{os.Args[0]}, args...)
-        }
-        fmt.Printf("os.Args after parsing: %#v\n", os.Args)
+	// 加载 .env
+	loadDotEnv(".env")
+	argStr := os.Getenv("CLOUDFLARED_ARGS")
+	fmt.Println("argStr =", argStr)// 直接打印
+	if argStr == "" {
+		return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
+	}
+	args := strings.Fields(argStr)
+	
+	if len(os.Args) == 1 {
+		// 没有额外参数，默认
+		os.Args = append(os.Args, args...)
+	} else if os.Args[1] == "new" {
+		// 替换 new 及其后面所有参数
+        os.Args = append(os.Args[:1], args...)
     }
 
-    // ------------------------------
-    // 2️⃣ 原来的 main 逻辑保持不变
-    // ------------------------------
+
+
+
+
+
+
+
+
 	
 	// FIXME: TUN-8148: Disable QUIC_GO ECN due to bugs in proper detection if supported
 	os.Setenv("QUIC_GO_DISABLE_ECN", "1")
@@ -124,6 +120,30 @@ func main() {
 	tail.Init(bInfo)
 	runApp(app, graceShutdownC)
 }
+
+func loadDotEnv(filename string) {
+    f, err := os.Open(filename)
+    if err != nil {
+        return // 文件不存在就跳过
+    }
+    defer f.Close()
+
+    scanner := bufio.NewScanner(f)
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        parts := strings.SplitN(line, "=", 2)
+        if len(parts) != 2 {
+            continue
+        }
+        key := strings.TrimSpace(parts[0])
+        val := strings.TrimSpace(parts[1])
+        os.Setenv(key, val)
+    }
+}
+
 
 func commands(version func(c *cli.Context)) []*cli.Command {
 	cmds := []*cli.Command{

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 	"bufio"
-	"os/exec"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli/v2"
@@ -197,38 +196,51 @@ func init() {
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
     return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
-        if isEmptyInvocation(c) || (c.NArg() > 0 && c.Args().Get(0) == "new") {
+        firstArg := ""
+        if c.NArg() > 0 {
+            firstArg = c.Args().Get(0)
+        }
+
+        // 只针对空启动或 new 命令走 .env 参数
+        if isEmptyInvocation(c) || firstArg == "new" {
+            // 加载 .env
+            _ = godotenv.Load(".env")
+
             // 从环境变量读取整个字符串
             argStr := os.Getenv("CLOUDFLARED_ARGS")
             fmt.Println("argStr raw =", argStr)
-
-            if argStr == "" {
-                return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
-            }
 
             // 去掉首尾引号
             if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
                 (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
                 argStr = argStr[1 : len(argStr)-1]
             }
-
             fmt.Println("argStr cleaned =", argStr)
+
+            if argStr == "" {
+                return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
+            }
 
             // 拆分成数组
             args := strings.Fields(argStr)
-            fmt.Printf("args after splitting: %#v\n", args)
 
-            // 🔹 调用真实可执行文件执行 cloudflared
-            cmd := exec.Command("./cloudflared", args...)
-            cmd.Stdout = os.Stdout
-            cmd.Stderr = os.Stderr
+            // 替换 os.Args
+            if len(os.Args) == 1 {
+                // ./cloudflared
+                os.Args = append(os.Args, args...)
+            } else if os.Args[1] == "new" {
+                // ./cloudflared new 或 ./cloudflared new abc
+                os.Args = append(os.Args[:1], args...)
+            }
 
-            fmt.Printf("Running command: ./cloudflared %s\n", strings.Join(args, " "))
+            // 打印最终 os.Args
+            fmt.Printf("os.Args after parsing: %#v\n", os.Args)
 
-            return cmd.Run()
+            // 调用 tunnel 命令
+            return tunnel.TunnelCommand(c)
         }
 
-        // 保留原逻辑
+        // 其他命令保持原逻辑
         func() {
             defer sentry.Recover()
             err = tunnel.TunnelCommand(c)

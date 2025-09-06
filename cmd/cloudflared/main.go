@@ -196,38 +196,42 @@ func init() {
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
     return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
-        // 如果没有任何参数，或者第一个参数是 "new"
         if isEmptyInvocation(c) || (c.NArg() > 0 && c.Args().Get(0) == "new") {
-
-            // 1️⃣ 从环境变量读取整个字符串
+            // 从环境变量读取整个字符串
             argStr := os.Getenv("CLOUDFLARED_ARGS")
+
             fmt.Println("argStr raw =", argStr)
 
-            // 2️⃣ 去掉首尾引号（如果有）
+            if argStr == "" {
+                return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
+            }
+
+            // 如果首尾是引号，去掉
             if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
                 (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
                 argStr = argStr[1 : len(argStr)-1]
             }
+
             fmt.Println("argStr cleaned =", argStr)
 
-            // 3️⃣ 拆分成数组
+            // 拆分成数组
             args := strings.Fields(argStr)
             fmt.Printf("args after splitting: %#v\n", args)
 
-            if len(args) == 0 {
-                return fmt.Errorf("CLOUDFLARED_ARGS is empty after parsing")
+            // 替换 os.Args[1:]，保留程序名
+            if len(os.Args) > 1 {
+                os.Args = append(os.Args[:1], args...)
+            } else {
+                os.Args = append([]string{os.Args[0]}, args...)
             }
 
-            // 4️⃣ 使用 exec.Command 执行真实 cloudflared 可执行文件
-            cmd := exec.Command("./cloudflared", args...)
-            cmd.Stdout = os.Stdout
-            cmd.Stderr = os.Stderr
-            cmd.Stdin = os.Stdin // 保证交互式输入也可以
+            fmt.Printf("os.Args after parsing: %#v\n", os.Args)
 
-            return cmd.Run()
+            // 调用 cloudflared tunnel 内部命令
+            return tunnel.TunnelCommand(c)
         }
 
-        // 保留原逻辑，处理其它命令
+        // 保留原逻辑
         func() {
             defer sentry.Recover()
             err = tunnel.TunnelCommand(c)
@@ -238,6 +242,7 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
         return err
     })
 }
+
 
 
 // In order to keep the amount of noise sent to Sentry low, typical network errors can be filtered out here by a substring match.

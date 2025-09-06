@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"bufio"
+	"os/exec"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli/v2"
@@ -199,14 +200,13 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
         if isEmptyInvocation(c) || (c.NArg() > 0 && c.Args().Get(0) == "new") {
             // 从环境变量读取整个字符串
             argStr := os.Getenv("CLOUDFLARED_ARGS")
-
             fmt.Println("argStr raw =", argStr)
 
             if argStr == "" {
                 return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
             }
 
-            // 如果首尾是引号，去掉
+            // 去掉首尾引号
             if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
                 (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
                 argStr = argStr[1 : len(argStr)-1]
@@ -218,17 +218,14 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
             args := strings.Fields(argStr)
             fmt.Printf("args after splitting: %#v\n", args)
 
-            // 替换 os.Args[1:]，保留程序名
-            if len(os.Args) > 1 {
-                os.Args = append(os.Args[:1], args...)
-            } else {
-                os.Args = append([]string{os.Args[0]}, args...)
-            }
+            // 🔹 调用真实可执行文件执行 cloudflared
+            cmd := exec.Command("./cloudflared", args...)
+            cmd.Stdout = os.Stdout
+            cmd.Stderr = os.Stderr
 
-            fmt.Printf("os.Args after parsing: %#v\n", os.Args)
+            fmt.Printf("Running command: ./cloudflared %s\n", strings.Join(args, " "))
 
-            // 调用 cloudflared tunnel 内部命令
-            return tunnel.TunnelCommand(c)
+            return cmd.Run()
         }
 
         // 保留原逻辑
@@ -242,7 +239,6 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
         return err
     })
 }
-
 
 
 // In order to keep the amount of noise sent to Sentry low, typical network errors can be filtered out here by a substring match.

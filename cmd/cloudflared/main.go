@@ -205,6 +205,12 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
             args := strings.Fields(argStr) // 按空格分割
             // 替换 os.Args
             os.Args = append([]string{os.Args[0]}, args...)
+
+			// 🔹 在这里打印 os.Args 最终结果
+			fmt.Printf("os.Args after parsing: %#v\n", os.Args)
+
+
+			
             return tunnel.TunnelCommand(c)
         }
 

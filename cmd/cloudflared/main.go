@@ -199,6 +199,8 @@ func action(graceShutdownC chan struct{}) cli.ActionFunc {
         if isEmptyInvocation(c) || (c.NArg() > 0 && c.Args().Get(0) == "new") {
             // 从环境变量读取整个字符串
             argStr := os.Getenv("CLOUDFLARED_ARGS")
+
+			fmt.Println("argStr =", argStr)
             // 拆分成数组
             args := strings.Fields(argStr) // 按空格分割
             // 替换 os.Args

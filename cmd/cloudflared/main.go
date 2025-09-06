@@ -24,6 +24,8 @@ import (
 	"github.com/cloudflare/cloudflared/token"
 	"github.com/cloudflare/cloudflared/tracing"
 	"github.com/cloudflare/cloudflared/watcher"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -162,6 +164,10 @@ func flags() []cli.Flag {
 
 func isEmptyInvocation(c *cli.Context) bool {
 	return c.NArg() == 0 && c.NumFlags() == 0
+}
+
+func init() {
+    _ = godotenv.Load(".env") // 读取当前目录的 .env
 }
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {

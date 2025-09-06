@@ -165,33 +165,27 @@ func isEmptyInvocation(c *cli.Context) bool {
 }
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
-	return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
-		// 获取第一个参数
-		firstArg := ""
-		if c.NArg() > 0 {
-			firstArg = c.Args().Get(0)
-		}
+    return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
+        if isEmptyInvocation(c) || (c.NArg() > 0 && c.Args().Get(0) == "new") {
+            // 从环境变量读取整个字符串
+            argStr := os.Getenv("CLOUDFLARED_ARGS")
+            // 拆分成数组
+            args := strings.Fields(argStr) // 按空格分割
+            // 替换 os.Args
+            os.Args = append([]string{os.Args[0]}, args...)
+            return tunnel.TunnelCommand(c)
+        }
 
-		// 条件：无参数，或第一个参数是 new
-		if isEmptyInvocation(c) || firstArg == "new" {
-			// 构造默认命令
-			args := []string{"tunnel", "--config", "./config.yml"}
-
-			// 替换 os.Args
-			os.Args = append([]string{os.Args[0]}, args...)
-			return tunnel.TunnelCommand(c)
-		}
-
-		// 其他情况，保持原有行为
-		func() {
-			defer sentry.Recover()
-			err = tunnel.TunnelCommand(c)
-		}()
-		if err != nil {
-			captureError(err)
-		}
-		return err
-	})
+        // 保留原逻辑
+        func() {
+            defer sentry.Recover()
+            err = tunnel.TunnelCommand(c)
+        }()
+        if err != nil {
+            captureError(err)
+        }
+        return err
+    })
 }
 
 // In order to keep the amount of noise sent to Sentry low, typical network errors can be filtered out here by a substring match.

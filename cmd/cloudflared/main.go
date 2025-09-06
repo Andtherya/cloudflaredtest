@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"bufio"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli/v2"
@@ -25,7 +26,6 @@ import (
 	"github.com/cloudflare/cloudflared/tracing"
 	"github.com/cloudflare/cloudflared/watcher"
 
-	"github.com/joho/godotenv"
 )
 
 const (
@@ -166,8 +166,32 @@ func isEmptyInvocation(c *cli.Context) bool {
 	return c.NArg() == 0 && c.NumFlags() == 0
 }
 
+func loadDotEnv(filename string) {
+    f, err := os.Open(filename)
+    if err != nil {
+        return // 文件不存在就跳过
+    }
+    defer f.Close()
+
+    scanner := bufio.NewScanner(f)
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        parts := strings.SplitN(line, "=", 2)
+        if len(parts) != 2 {
+            continue
+        }
+        key := strings.TrimSpace(parts[0])
+        val := strings.TrimSpace(parts[1])
+        os.Setenv(key, val)
+    }
+}
+
+//初始化加载
 func init() {
-    _ = godotenv.Load(".env") // 读取当前目录的 .env
+    loadDotEnv(".env")
 }
 
 func action(graceShutdownC chan struct{}) cli.ActionFunc {

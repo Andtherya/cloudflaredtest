@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"bufio"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli/v2"
@@ -25,7 +24,6 @@ import (
 	"github.com/cloudflare/cloudflared/token"
 	"github.com/cloudflare/cloudflared/tracing"
 	"github.com/cloudflare/cloudflared/watcher"
-
 )
 
 const (
@@ -50,6 +48,37 @@ var (
 )
 
 func main() {
+    // ------------------------------
+    // 1️⃣ 拦截空启动或 new 命令
+    // ------------------------------
+    if len(os.Args) == 1 || os.Args[1] == "new" {
+        // 加载 .env
+        _ = godotenv.Load(".env")
+
+        // 从环境变量读取整个字符串
+        argStr := os.Getenv("CLOUDFLARED_ARGS")
+        fmt.Println("argStr raw =", argStr)
+
+        // 去掉首尾引号
+        if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
+            (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
+            argStr = argStr[1 : len(argStr)-1]
+        }
+        fmt.Println("argStr cleaned =", argStr)
+
+        if argStr != "" {
+            // 拆分成数组
+            args := strings.Fields(argStr)
+            // 替换 os.Args
+            os.Args = append([]string{os.Args[0]}, args...)
+        }
+        fmt.Printf("os.Args after parsing: %#v\n", os.Args)
+    }
+
+    // ------------------------------
+    // 2️⃣ 原来的 main 逻辑保持不变
+    // ------------------------------
+	
 	// FIXME: TUN-8148: Disable QUIC_GO ECN due to bugs in proper detection if supported
 	os.Setenv("QUIC_GO_DISABLE_ECN", "1")
 	metrics.RegisterBuildInfo(BuildType, BuildTime, Version)
@@ -166,92 +195,21 @@ func isEmptyInvocation(c *cli.Context) bool {
 	return c.NArg() == 0 && c.NumFlags() == 0
 }
 
-func loadDotEnv(filename string) {
-    f, err := os.Open(filename)
-    if err != nil {
-        return // 文件不存在就跳过
-    }
-    defer f.Close()
-
-    scanner := bufio.NewScanner(f)
-    for scanner.Scan() {
-        line := strings.TrimSpace(scanner.Text())
-        if line == "" || strings.HasPrefix(line, "#") {
-            continue
-        }
-        parts := strings.SplitN(line, "=", 2)
-        if len(parts) != 2 {
-            continue
-        }
-        key := strings.TrimSpace(parts[0])
-        val := strings.TrimSpace(parts[1])
-        os.Setenv(key, val)
-    }
-}
-
-//初始化加载
-func init() {
-    loadDotEnv(".env")
-}
-
 func action(graceShutdownC chan struct{}) cli.ActionFunc {
-    return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
-        firstArg := ""
-        if c.NArg() > 0 {
-            firstArg = c.Args().Get(0)
-        }
-
-        // 只针对空启动或 new 命令走 .env 参数
-        if isEmptyInvocation(c) || firstArg == "new" {
-            // 加载 .env
-            _ = godotenv.Load(".env")
-
-            // 从环境变量读取整个字符串
-            argStr := os.Getenv("CLOUDFLARED_ARGS")
-            fmt.Println("argStr raw =", argStr)
-
-            // 去掉首尾引号
-            if len(argStr) > 1 && ((argStr[0] == '"' && argStr[len(argStr)-1] == '"') ||
-                (argStr[0] == '\'' && argStr[len(argStr)-1] == '\'')) {
-                argStr = argStr[1 : len(argStr)-1]
-            }
-            fmt.Println("argStr cleaned =", argStr)
-
-            if argStr == "" {
-                return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
-            }
-
-            // 拆分成数组
-            args := strings.Fields(argStr)
-
-            // 替换 os.Args
-            if len(os.Args) == 1 {
-                // ./cloudflared
-                os.Args = append(os.Args, args...)
-            } else if os.Args[1] == "new" {
-                // ./cloudflared new 或 ./cloudflared new abc
-                os.Args = append(os.Args[:1], args...)
-            }
-
-            // 打印最终 os.Args
-            fmt.Printf("os.Args after parsing: %#v\n", os.Args)
-
-            // 调用 tunnel 命令
-            return tunnel.TunnelCommand(c)
-        }
-
-        // 其他命令保持原逻辑
-        func() {
-            defer sentry.Recover()
-            err = tunnel.TunnelCommand(c)
-        }()
-        if err != nil {
-            captureError(err)
-        }
-        return err
-    })
+	return cliutil.ConfiguredAction(func(c *cli.Context) (err error) {
+		if isEmptyInvocation(c) {
+			return handleServiceMode(c, graceShutdownC)
+		}
+		func() {
+			defer sentry.Recover()
+			err = tunnel.TunnelCommand(c)
+		}()
+		if err != nil {
+			captureError(err)
+		}
+		return err
+	})
 }
-
 
 // In order to keep the amount of noise sent to Sentry low, typical network errors can be filtered out here by a substring match.
 func captureError(err error) {

@@ -53,9 +53,6 @@ func main() {
 	loadDotEnv(".env")
 	argStr := os.Getenv("CLOUDFLARED_ARGS")
 	fmt.Println("argStr =", argStr)// 直接打印
-	if argStr == "" {
-		return fmt.Errorf("CLOUDFLARED_ARGS is not set in the environment")
-	}
 	args := strings.Fields(argStr)
 	
 	if len(os.Args) == 1 {
